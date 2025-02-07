@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button"
 import type { ITeamspace, INote } from "@/types/types"
 import { useSidebar } from "@/contexts/SidebarContext"
 
-export default function Sidebar() {
+interface SidebarProps {
+  onNoteSelect?: (noteId: string) => void
+}
+
+export default function Sidebar({ onNoteSelect }: SidebarProps) {
   const { teamSpaces, setTeamSpaces, openStates, setOpenStates } = useSidebar()
 
   useEffect(() => {
@@ -52,6 +56,12 @@ export default function Sidebar() {
 
   const toggleOpen = (key: string) => {
     setOpenStates((prev) => ({ ...prev, [key]: !prev[key] }))
+  }
+
+  const handleNoteClick = (noteId: string) => {
+    if (onNoteSelect) {
+      onNoteSelect(noteId)
+    }
   }
 
   return (
@@ -101,6 +111,7 @@ export default function Sidebar() {
                     <div
                       key={note.id}
                       className="ml-7 text-notion-text-secondary hover:bg-notion-hover rounded p-1 cursor-pointer flex items-center"
+                      onClick={() => handleNoteClick(note.id)}
                     >
                       <File className="h-4 w-4 mr-2" />
                       <span>{note.title}</span>

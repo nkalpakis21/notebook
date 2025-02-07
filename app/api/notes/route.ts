@@ -1,9 +1,21 @@
+import { addNoteToFolder } from "@/lib/firestoreClient"
 import { NextResponse } from "next/server"
 
 export async function POST(request: Request) {
-  const { title, content } = await request.json()
-  // Save note to database
-  const newNote = { id: Date.now().toString(), title, content }
-  return NextResponse.json(newNote, { status: 201 })
-}
+  try {
+    const { title, content, folderId } = await request.json()
 
+    // Validate input
+    if (!title || !content || !folderId) {
+      return NextResponse.json({ error: "Missing required fields" }, { status: 400 })
+    }
+
+    const response = await addNoteToFolder(title, content, folderId);
+
+  
+    return NextResponse.json({ response }, { status: 201 })
+  } catch (error) {
+    console.error("Error creating note:", error)
+    return NextResponse.json({ error: "Failed to create note" }, { status: 500 })
+  }
+}
