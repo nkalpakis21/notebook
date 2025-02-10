@@ -1,7 +1,8 @@
-export type ITeamspace = {
+export interface ITeamspace {
     id: string
     title: string
     folders: IFolder[]
+    notes?: INote[]
   }
   
 export type IFolder = {

@@ -1,23 +1,44 @@
-import { getAllTeamSpaces, getAllTeamSpacesEntities } from "@/lib/firestoreClient"
 import { NextResponse } from "next/server"
+import { v4 as uuidv4 } from 'uuid'
+import { addTeamSpace, getAllTeamSpacesEntities } from "@/lib/firestoreClient"
 
 export async function GET() {
-  // Fetch team spaces from database
-  try{
+  try {
     const teamSpaces = await getAllTeamSpacesEntities()
-    console.log(teamSpaces);
     return NextResponse.json(teamSpaces)
-  } catch (e) {
-    console.error('Error getting TeamSpaces:', e);
-        return NextResponse.json({ error: 'Failed to get Properties' }, { status: 500 });
+  } catch (error) {
+    console.error('Error getting TeamSpaces:', error)
+    return NextResponse.json({ error: 'Failed to get TeamSpaces' }, { status: 500 })
   }
-  
 }
 
 export async function POST(request: Request) {
-  const { name } = await request.json()
-  // Create team space in database
-  const newTeamSpace = { id: Date.now().toString(), name, folders: [] }
-  return NextResponse.json(newTeamSpace, { status: 201 })
+  try {
+    const { name } = await request.json()
+    
+    if (!name || typeof name !== 'string') {
+      return NextResponse.json(
+        { error: 'Invalid team space name' },
+        { status: 400 }
+      )
+    }
+
+    const newTeamSpace = {
+      id: uuidv4(),
+      title: name,
+      folders: [], // Initialize as empty array
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+    }
+
+    await addTeamSpace(newTeamSpace)
+    return NextResponse.json(newTeamSpace)
+  } catch (error) {
+    console.error('Error creating teamspace:', error)
+    return NextResponse.json(
+      { error: 'Failed to create team space' },
+      { status: 500 }
+    )
+  }
 }
 

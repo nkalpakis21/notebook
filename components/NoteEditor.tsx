@@ -1,128 +1,112 @@
 "use client"
 
-import { useState, useEffect } from "react"
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Textarea } from "@/components/ui/textarea"
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { useEffect, useState, useCallback } from "react"
+import { useRouter } from "next/navigation"
+import SaveIndicator from "./SaveIndicator"
+import debounce from "lodash/debounce"
 import { useSidebar } from "@/contexts/SidebarContext"
-import type { IFolder } from "@/types/types"
 
 interface NoteEditorProps {
   noteId?: string
 }
 
-export default function NoteEditor({ noteId }: NoteEditorProps) {
-  const [title, setTitle] = useState("")
-  const [content, setContent] = useState("")
-  const [selectedFolder, setSelectedFolder] = useState<string | null>(null)
-  const { teamSpaces } = useSidebar()
-  const [folders, setFolders] = useState<IFolder[]>([])
-  const [isLoading, setIsLoading] = useState(false)
+type SaveStatus = "idle" | "saving" | "saved"
 
+export default function NoteEditor({ noteId }: NoteEditorProps) {
+  const [title, setTitle] = useState("Untitled")
+  const [content, setContent] = useState("")
+  const [saveStatus, setSaveStatus] = useState<SaveStatus>("idle")
+  const router = useRouter()
+  const { fetchTeamSpaces, updateNoteTitle } = useSidebar()
+
+  // Create a debounced save function
+  const debouncedSave = useCallback(
+    debounce(async (newTitle: string, newContent: string) => {
+      setSaveStatus("saving")
+      try {
+        const response = await fetch(`/api/notes/${noteId}`, {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          body: JSON.stringify({ title: newTitle, content: newContent }),
+        })
+
+        if (!response.ok) {
+          throw new Error("Failed to save note")
+        }
+        setSaveStatus("saved")
+        // Reset to idle after showing "Saved" for 2 seconds
+        setTimeout(() => setSaveStatus("idle"), 2000)
+      } catch (error) {
+        console.error("Error saving note:", error)
+        setSaveStatus("idle")
+      }
+    }, 3000),
+    [noteId]
+  )
+
+  // Cancel debounced save on unmount
   useEffect(() => {
-    const allFolders = teamSpaces.flatMap((ts) => ts.folders)
-    setFolders(allFolders)
-  }, [teamSpaces])
+    return () => {
+      debouncedSave.cancel()
+    }
+  }, [debouncedSave])
 
   useEffect(() => {
     if (noteId) {
-      fetchNote(noteId)
-    } else {
-      // Clear the form when creating a new note
-      setTitle("")
-      setContent("")
-      setSelectedFolder(null)
+      fetchNote()
     }
   }, [noteId])
 
-  const fetchNote = async (id: string) => {
-    setIsLoading(true)
+  const fetchNote = async () => {
     try {
-      const response = await fetch(`/api/notes/${id}`)
-      if (!response.ok) {
-        throw new Error("Failed to fetch note")
-      }
+      const response = await fetch(`/api/notes/${noteId}`)
       const note = await response.json()
       setTitle(note.title)
       setContent(note.content)
-      setSelectedFolder(note.folderId)
     } catch (error) {
       console.error("Error fetching note:", error)
-    } finally {
-      setIsLoading(false)
     }
   }
 
-  const handleSave = async () => {
-    if (!noteId && !selectedFolder) {
-      alert("Please select a folder for the new note.")
-      return
+  const handleTitleChange = (newTitle: string) => {
+    setTitle(newTitle)
+    // Update the title in the sidebar immediately
+    if (noteId) {
+      updateNoteTitle(noteId, newTitle)
     }
-
-    const noteData = {
-      title,
-      content,
-      ...(noteId ? {} : { folderId: selectedFolder }),
-    }
-
-    const url = noteId ? `/api/notes/${noteId}` : "/api/notes"
-    const method = noteId ? "PUT" : "POST"
-
-    try {
-      const response = await fetch(url, {
-        method,
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(noteData),
-      })
-
-      if (response.ok) {
-        alert(noteId ? "Note updated successfully!" : "Note created successfully!")
-      } else {
-        throw new Error("Failed to save note")
-      }
-    } catch (error) {
-      console.error("Error saving note:", error)
-      alert("Failed to save note. Please try again.")
-    }
+    // Still save to the server with debounce
+    debouncedSave(newTitle, content)
   }
 
-  if (isLoading) {
-    return <div className="flex items-center justify-center h-full">Loading...</div>
+  const handleContentChange = (newContent: string) => {
+    setContent(newContent)
+    debouncedSave(title, newContent)
+  }
+
+  if (!noteId) {
+    return null
   }
 
   return (
-    <div className="space-y-120">
-      <Input
-        placeholder="Untitled"
-        value={title}
-        onChange={(e) => setTitle(e.target.value)}
-        className="bg-notion-default text-notion-text-primary border-0 text-4xl font-bold placeholder:text-notion-text-secondary focus-visible:ring-0 px-0"
-      />
-      {!noteId && (
-        <Select value={selectedFolder || undefined} onValueChange={setSelectedFolder}>
-          <SelectTrigger className="w-[200px]">
-            <SelectValue placeholder="Select folder" />
-          </SelectTrigger>
-          <SelectContent>
-            {folders.map((folder) => (
-              <SelectItem key={folder.id} value={folder.id}>
-                {folder.title}
-              </SelectItem>
-            ))}
-          </SelectContent>
-        </Select>
-      )}
-      <Textarea
-        placeholder="Type '/' for commands"
+    <div className="space-y-4">
+      <div className="flex items-center justify-between">
+        <input
+          type="text"
+          value={title}
+          onChange={(e) => handleTitleChange(e.target.value)}
+          placeholder="Untitled"
+          className="text-3xl font-bold w-full bg-transparent border-none outline-none"
+        />
+        <SaveIndicator status={saveStatus} />
+      </div>
+      <textarea
         value={content}
-        onChange={(e) => setContent(e.target.value)}
-        rows={20}
-        className="bg-notion-default text-notion-text-primary border-0 resize-none placeholder:text-notion-text-secondary focus-visible:ring-0 px-0"
+        onChange={(e) => handleContentChange(e.target.value)}
+        placeholder="Start writing..."
+        className="w-full h-[calc(100vh-200px)] bg-transparent border-none outline-none resize-none"
       />
-      <Button onClick={handleSave} className="bg-notion-hover hover:bg-notion-sidebar text-notion-text-primary">
-        {noteId ? "Update Note" : "Create Note"}
-      </Button>
     </div>
   )
 }

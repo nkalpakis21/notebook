@@ -1,7 +1,6 @@
 import { getNoteById, updateNote } from "@/lib/firestoreClient"
 import { NextResponse } from "next/server"
 
-
 export async function GET(request: Request, { params }: { params: { noteId: string } }) {
   try {
     const note = await getNoteById(params.noteId)

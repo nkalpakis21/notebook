@@ -1,4 +1,4 @@
-import { collection, addDoc, getDocs, query, where, doc, getDoc, updateDoc, arrayUnion } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, doc, getDoc, updateDoc, arrayUnion, orderBy, setDoc } from 'firebase/firestore';
 import { initializeFirebase } from './firebaseClient';
 import { serverTimestamp } from 'firebase/firestore'
 import { IFolder, INote, ITeamspace } from '@/types/types';
@@ -91,43 +91,52 @@ export const getAllTeamSpacesEntities = async (): Promise<Array<ITeamspace>> => 
     const teamSpacesRef = collection(db, "teamspaces");
     const teamSpacesSnapshot = await getDocs(teamSpacesRef);
 
-    // If no documents exist
-    if (teamSpacesSnapshot.empty) {
-      return [];
-    }
-
     const teamspacePromises = teamSpacesSnapshot.docs.map(async (teamspaceDoc) => {
       const teamspaceData = teamspaceDoc.data();
-      const folderIds: string[] = teamspaceData.folders;
-      // Fetch folders for this teamspace
+      console.log('Fetching notes for teamspace:', teamspaceDoc.id);
+      
+      // Get all notes that belong to this teamspace
+      const notesQuery = query(
+        collection(db, "notes"),
+        where("referenceId", "==", teamspaceDoc.id),
+        where("referenceType", "==", "teamspace")
+      );
+      const notesSnapshot = await getDocs(notesQuery);
+      console.log('Found teamspace notes:', notesSnapshot.docs.length);
+      
+      const teamspaceNotes = notesSnapshot.docs.map(doc => {
+        const data = doc.data();
+        console.log('Note data:', data);
+        return {
+          id: doc.id,
+          title: data.title
+        };
+      });
+
+      // Get folders and their notes
+      const folderIds: string[] = teamspaceData.folders || [];
       const folders: IFolder[] = await Promise.all(
         folderIds.map(async (folderId) => {
           const folderDocRef = doc(db, "folders", folderId);
           const folderDoc = await getDoc(folderDocRef);
 
-
           if (folderDoc.exists()) {
-            const folderData = folderDoc.data();
-            const noteIds: string[] = folderData.notes;
-
-            // Fetch notes for this folder
-            const notes: INote[] = await Promise.all(
-              noteIds.map(async (noteId) => {
-                const noteDocRef = doc(db, "notes", noteId);
-                const noteDoc = await getDoc(noteDocRef);
-
-                if (noteDoc.exists()) {
-                  return { id: noteDoc.id, title: noteDoc.data().title } as INote;
-                }
-
-                throw new Error(`Note not found for ID: ${noteId}`);
-              })
+            // Get notes that belong to this folder
+            const folderNotesQuery = query(
+              collection(db, "notes"),
+              where("referenceId", "==", folderId),
+              where("referenceType", "==", "folder")
             );
+            const folderNotesSnapshot = await getDocs(folderNotesQuery);
+            const notes = folderNotesSnapshot.docs.map(doc => ({
+              id: doc.id,
+              title: doc.data().title
+            }));
 
             return {
               id: folderDoc.id,
-              title: folderData.title,
-              notes,
+              title: folderDoc.data().title,
+              notes
             } as IFolder;
           }
 
@@ -139,10 +148,10 @@ export const getAllTeamSpacesEntities = async (): Promise<Array<ITeamspace>> => 
         id: teamspaceDoc.id,
         title: teamspaceData.title,
         folders,
+        notes: teamspaceNotes
       } as ITeamspace;
     });
 
-    // Wait for all teamspaces and nested folder/note data to be fetched
     return await Promise.all(teamspacePromises);
   } catch (error) {
     console.error("Error fetching all teamspaces:", error);
@@ -181,3 +190,57 @@ export const getAllTeamSpaces = async (): Promise<Array<ITeamspace>> => {
         throw new Error('Failed to retrieve feedback');
     }
 };
+
+export async function addTeamSpace(teamSpace: any) {
+  const { db } = initializeFirebase()
+  
+  try {
+    const docRef = doc(db, "teamspaces", teamSpace.id)
+    await setDoc(docRef, {
+      ...teamSpace,
+      folders: [], // Ensure folders is initialized as an empty array
+      notes: [],  // Initialize notes array
+    })
+    return teamSpace.id
+  } catch (error) {
+    console.error("Error adding teamspace:", error)
+    throw error
+  }
+}
+
+export async function getTeamSpaces() {
+  try {
+    const teamSpacesRef = collection(db, "teamspaces")
+    const q = query(teamSpacesRef, orderBy("createdAt", "desc"))
+    const querySnapshot = await getDocs(q)
+    
+    const teamSpaces = querySnapshot.docs.map(doc => ({
+      id: doc.id,
+      ...doc.data()
+    }))
+    
+    return teamSpaces
+  } catch (error) {
+    console.error("Error getting teamspaces:", error)
+    throw error
+  }
+}
+
+export async function addNote(note: any) {
+  const { db } = initializeFirebase()
+  try {
+    const docRef = doc(db, "notes", note.id)
+    await setDoc(docRef, note)
+
+    // Update the reference (folder or teamspace) with the new note
+    const referenceRef = doc(db, note.referenceType === 'folder' ? "folders" : "teamspaces", note.referenceId)
+    await updateDoc(referenceRef, {
+      notes: arrayUnion(note.id)
+    })
+
+    return note.id
+  } catch (error) {
+    console.error("Error adding note:", error)
+    throw error
+  }
+}
