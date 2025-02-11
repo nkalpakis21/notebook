@@ -1,4 +1,4 @@
-import { getNoteById, updateNote } from "@/lib/firestoreClient"
+import { getNoteById, updateNote, deleteNote } from "@/lib/firestoreClient"
 import { NextResponse } from "next/server"
 
 export async function GET(request: Request, { params }: { params: { noteId: string } }) {
@@ -19,6 +19,19 @@ export async function PUT(request: Request, { params }: { params: { noteId: stri
   } catch (error) {
     console.error("Error:", error)
     return NextResponse.json({ error: "Failed to update note" }, { status: 500 })
+  }
+}
+
+export async function DELETE(
+  request: Request,
+  { params }: { params: { noteId: string } }
+) {
+  try {
+    await deleteNote(params.noteId)
+    return NextResponse.json({ message: "Note deleted successfully" })
+  } catch (error) {
+    console.error("Error:", error)
+    return NextResponse.json({ error: "Failed to delete note" }, { status: 500 })
   }
 }
 

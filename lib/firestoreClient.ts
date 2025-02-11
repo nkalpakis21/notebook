@@ -1,4 +1,4 @@
-import { collection, addDoc, getDocs, query, where, doc, getDoc, updateDoc, arrayUnion, orderBy, setDoc } from 'firebase/firestore';
+import { collection, addDoc, getDocs, query, where, doc, getDoc, updateDoc, arrayUnion, orderBy, setDoc, arrayRemove, deleteDoc } from 'firebase/firestore';
 import { initializeFirebase } from './firebaseClient';
 import { serverTimestamp } from 'firebase/firestore'
 import { IFolder, INote, ITeamspace } from '@/types/types';
@@ -93,7 +93,7 @@ export const getAllTeamSpacesEntities = async (): Promise<Array<ITeamspace>> => 
 
     const teamspacePromises = teamSpacesSnapshot.docs.map(async (teamspaceDoc) => {
       const teamspaceData = teamspaceDoc.data();
-      console.log('Fetching notes for teamspace:', teamspaceDoc.id);
+      const teamspaceRef = doc(db, "teamspaces", teamspaceDoc.id);
       
       // Get all notes that belong to this teamspace
       const notesQuery = query(
@@ -102,47 +102,49 @@ export const getAllTeamSpacesEntities = async (): Promise<Array<ITeamspace>> => 
         where("referenceType", "==", "teamspace")
       );
       const notesSnapshot = await getDocs(notesQuery);
-      console.log('Found teamspace notes:', notesSnapshot.docs.length);
       
-      const teamspaceNotes = notesSnapshot.docs.map(doc => {
-        const data = doc.data();
-        console.log('Note data:', data);
-        return {
-          id: doc.id,
-          title: data.title
-        };
-      });
+      const teamspaceNotes = notesSnapshot.docs.map(doc => ({
+        id: doc.id,
+        title: doc.data().title
+      }));
 
-      // Get folders and their notes
+      // Get folders and clean up missing ones
       const folderIds: string[] = teamspaceData.folders || [];
-      const folders: IFolder[] = await Promise.all(
-        folderIds.map(async (folderId) => {
-          const folderDocRef = doc(db, "folders", folderId);
-          const folderDoc = await getDoc(folderDocRef);
+      const foldersToKeep: string[] = [];
+      const folders: IFolder[] = [];
 
-          if (folderDoc.exists()) {
-            // Get notes that belong to this folder
-            const folderNotesQuery = query(
-              collection(db, "notes"),
-              where("referenceId", "==", folderId),
-              where("referenceType", "==", "folder")
-            );
-            const folderNotesSnapshot = await getDocs(folderNotesQuery);
-            const notes = folderNotesSnapshot.docs.map(doc => ({
-              id: doc.id,
-              title: doc.data().title
-            }));
+      for (const folderId of folderIds) {
+        const folderDocRef = doc(db, "folders", folderId);
+        const folderDoc = await getDoc(folderDocRef);
 
-            return {
-              id: folderDoc.id,
-              title: folderDoc.data().title,
-              notes
-            } as IFolder;
-          }
+        if (folderDoc.exists()) {
+          // Get notes that belong to this folder
+          const folderNotesQuery = query(
+            collection(db, "notes"),
+            where("referenceId", "==", folderId),
+            where("referenceType", "==", "folder")
+          );
+          const folderNotesSnapshot = await getDocs(folderNotesQuery);
+          const notes = folderNotesSnapshot.docs.map(doc => ({
+            id: doc.id,
+            title: doc.data().title
+          }));
 
-          throw new Error(`Folder not found for ID: ${folderId}`);
-        })
-      );
+          folders.push({
+            id: folderDoc.id,
+            title: folderDoc.data().title,
+            notes
+          });
+          foldersToKeep.push(folderId);
+        }
+      }
+
+      // If we found any missing folders, update the teamspace
+      if (foldersToKeep.length !== folderIds.length) {
+        await updateDoc(teamspaceRef, {
+          folders: foldersToKeep
+        });
+      }
 
       return {
         id: teamspaceDoc.id,
@@ -241,6 +243,104 @@ export async function addNote(note: any) {
     return note.id
   } catch (error) {
     console.error("Error adding note:", error)
+    throw error
+  }
+}
+
+export async function deleteNote(noteId: string) {
+  const { db } = initializeFirebase()
+  try {
+    // First get the note to know its reference
+    const noteRef = doc(db, "notes", noteId)
+    const noteDoc = await getDoc(noteRef)
+    
+    if (!noteDoc.exists()) {
+      throw new Error("Note not found")
+    }
+
+    const noteData = noteDoc.data()
+    
+    // Remove note from its reference (folder or teamspace)
+    const referenceRef = doc(
+      db, 
+      noteData.referenceType === 'folder' ? "folders" : "teamspaces", 
+      noteData.referenceId
+    )
+    
+    await updateDoc(referenceRef, {
+      notes: arrayRemove(noteId)
+    })
+
+    // Delete the note document
+    await deleteDoc(noteRef)
+    
+    return true
+  } catch (error) {
+    console.error("Error deleting note:", error)
+    throw error
+  }
+}
+
+export async function addFolder(folder: any) {
+  const { db } = initializeFirebase()
+  try {
+    const docRef = doc(db, "folders", folder.id)
+    await setDoc(docRef, folder)
+
+    // Add folder to teamspace's folders array
+    const teamSpaceRef = doc(db, "teamspaces", folder.teamSpaceId)
+    await updateDoc(teamSpaceRef, {
+      folders: arrayUnion(folder.id)
+    })
+
+    return folder.id
+  } catch (error) {
+    console.error("Error adding folder:", error)
+    throw error
+  }
+}
+
+export async function deleteFolder(folderId: string) {
+  const { db } = initializeFirebase()
+  try {
+    // First get the folder to know its teamspace
+    const folderRef = doc(db, "folders", folderId)
+    const folderDoc = await getDoc(folderRef)
+    
+    if (!folderDoc.exists()) {
+      throw new Error("Folder not found")
+    }
+
+    const folderData = folderDoc.data()
+    
+    // Get all notes in this folder
+    const notesQuery = query(
+      collection(db, "notes"),
+      where("referenceId", "==", folderId),
+      where("referenceType", "==", "folder")
+    )
+    const notesSnapshot = await getDocs(notesQuery)
+    
+    // Delete all notes in the folder
+    const noteDeletePromises = notesSnapshot.docs.map(noteDoc => 
+      deleteDoc(doc(db, "notes", noteDoc.id))
+    )
+    await Promise.all(noteDeletePromises)
+
+    // Remove folder from teamspace's folders array
+    if (folderData.teamSpaceId) {
+      const teamSpaceRef = doc(db, "teamspaces", folderData.teamSpaceId)
+      await updateDoc(teamSpaceRef, {
+        folders: arrayRemove(folderId)
+      })
+    }
+
+    // Delete the folder document
+    await deleteDoc(folderRef)
+    
+    return true
+  } catch (error) {
+    console.error("Error deleting folder:", error)
     throw error
   }
 }
