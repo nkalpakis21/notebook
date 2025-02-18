@@ -1,8 +1,9 @@
 "use client"
 
-import type React from "react"
-import { createContext, useContext, useState, type ReactNode, useCallback } from "react"
+import { createContext, useContext, useState, useCallback } from "react"
 import type { ITeamspace } from "@/types/types"
+import { db } from "@/lib/firebase"
+import { collection, getDocs } from "firebase/firestore"
 
 interface SidebarContextType {
   teamSpaces: ITeamspace[]
@@ -10,48 +11,51 @@ interface SidebarContextType {
   openStates: { [key: string]: boolean }
   setOpenStates: (states: { [key: string]: boolean }) => void
   fetchTeamSpaces: () => Promise<void>
-  updateNoteTitle: (noteId: string, newTitle: string) => void
+  toggleOpen: (key: string) => void
 }
 
 const SidebarContext = createContext<SidebarContextType | null>(null)
 
-export function SidebarProvider({ children }: { children: ReactNode }) {
+export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [teamSpaces, setTeamSpaces] = useState<ITeamspace[]>([])
   const [openStates, setOpenStates] = useState<{ [key: string]: boolean }>({})
 
   const fetchTeamSpaces = useCallback(async () => {
-    // Implementation of fetchTeamSpaces
+    try {
+      const teamSpacesRef = collection(db, 'teamspaces')
+      const snapshot = await getDocs(teamSpacesRef)
+      const teamSpacesData = snapshot.docs.map(doc => ({
+        ...doc.data(),
+        id: doc.id,
+      })) as ITeamspace[]
+      
+      setTeamSpaces(teamSpacesData)
+      
+      // Initialize open states for new items
+      setOpenStates(prev => {
+        const newStates = { ...prev }
+        teamSpacesData.forEach(ts => {
+          if (!newStates[`ts-${ts.id}`]) {
+            newStates[`ts-${ts.id}`] = true
+          }
+          ts.folders?.forEach(folder => {
+            if (!newStates[`folder-${folder.id}`]) {
+              newStates[`folder-${folder.id}`] = false
+            }
+          })
+        })
+        return newStates
+      })
+    } catch (error) {
+      console.error("Error fetching team spaces:", error)
+    }
   }, [])
 
-  const updateNoteTitle = useCallback((noteId: string, newTitle: string) => {
-    setTeamSpaces(currentTeamSpaces => {
-      return currentTeamSpaces.map(teamSpace => {
-        // Check teamspace-level notes
-        if (teamSpace.notes) {
-          const noteIndex = teamSpace.notes.findIndex(note => note.id === noteId)
-          if (noteIndex !== -1) {
-            const updatedNotes = [...teamSpace.notes]
-            updatedNotes[noteIndex] = { ...updatedNotes[noteIndex], title: newTitle }
-            return { ...teamSpace, notes: updatedNotes }
-          }
-        }
-
-        // Check folder-level notes
-        const updatedFolders = teamSpace.folders.map(folder => {
-          if (folder.notes) {
-            const noteIndex = folder.notes.findIndex(note => note.id === noteId)
-            if (noteIndex !== -1) {
-              const updatedNotes = [...folder.notes]
-              updatedNotes[noteIndex] = { ...updatedNotes[noteIndex], title: newTitle }
-              return { ...folder, notes: updatedNotes }
-            }
-          }
-          return folder
-        })
-
-        return { ...teamSpace, folders: updatedFolders }
-      })
-    })
+  const toggleOpen = useCallback((key: string) => {
+    setOpenStates(prev => ({
+      ...prev,
+      [key]: !prev[key]
+    }))
   }, [])
 
   return (
@@ -61,7 +65,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
       openStates,
       setOpenStates,
       fetchTeamSpaces,
-      updateNoteTitle
+      toggleOpen
     }}>
       {children}
     </SidebarContext.Provider>
@@ -70,7 +74,7 @@ export function SidebarProvider({ children }: { children: ReactNode }) {
 
 export function useSidebar() {
   const context = useContext(SidebarContext)
-  if (context === null) {
+  if (!context) {
     throw new Error("useSidebar must be used within a SidebarProvider")
   }
   return context
