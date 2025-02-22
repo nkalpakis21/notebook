@@ -22,7 +22,6 @@ export async function POST(request: Request) {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     }
-    console.log('created note', newNote)
     await addNote(newNote)
     return NextResponse.json(newNote)
   } catch (error) {

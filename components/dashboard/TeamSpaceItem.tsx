@@ -15,6 +15,7 @@ export function TeamSpaceItem({ teamSpace }: TeamSpaceItemProps) {
   const { dialogState, setDialogState } = useTeamSpaceActions()
 
   const handleCreateFolder = () => {
+    console.log("Creating folder");
     setDialogState({
       type: 'folder',
       isOpen: true,
