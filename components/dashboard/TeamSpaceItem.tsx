@@ -5,6 +5,8 @@ import type { ITeamspace } from "@/types/types"
 import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/contexts/SidebarContext"
 import { useTeamSpaceActions } from "@/hooks/useTeamSpaceActions"
+import { useState } from "react"
+import { Input } from "@/components/ui/input"
 
 interface TeamSpaceItemProps {
   teamSpace: ITeamspace
@@ -12,26 +14,46 @@ interface TeamSpaceItemProps {
 
 export function TeamSpaceItem({ teamSpace }: TeamSpaceItemProps) {
   const { openStates, toggleOpen } = useSidebar()
-  const { dialogState, setDialogState } = useTeamSpaceActions()
+  const { createFolder } = useTeamSpaceActions()
+  const [isCreatingFolder, setIsCreatingFolder] = useState(false)
+  const [newFolderName, setNewFolderName] = useState("")
+  const [isLoading, setIsLoading] = useState(false)
 
   const handleCreateFolder = () => {
-    console.log("Creating folder");
-    setDialogState({
-      type: 'folder',
-      isOpen: true,
-      teamSpaceId: teamSpace.id,
-      isLoading: false
-    })
+    setIsCreatingFolder(true)
+  }
+
+  const handleSubmitFolder = async (e: React.FormEvent) => {
+    e.preventDefault()
+    if (!newFolderName.trim() || isLoading) return
+
+    try {
+      setIsLoading(true)
+      await createFolder(teamSpace.id, newFolderName.trim())
+      setNewFolderName("")
+      setIsCreatingFolder(false)
+    } catch (error) {
+      console.error('Error creating folder:', error)
+    } finally {
+      setIsLoading(false)
+    }
+  }
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === 'Escape') {
+      setIsCreatingFolder(false)
+      setNewFolderName("")
+    }
   }
 
   const handleCreateNote = (folderId: string) => {
-    setDialogState({
-      type: 'note',
-      isOpen: true,
-      teamSpaceId: teamSpace.id,
-      folderId,
-      isLoading: false
-    })
+    // setDialogState({
+    //   type: 'note',
+    //   isOpen: true,
+    //   teamSpaceId: teamSpace.id,
+    //   folderId,
+    //   isLoading: false
+    // })
   }
 
   return (
@@ -53,15 +75,33 @@ export function TeamSpaceItem({ teamSpace }: TeamSpaceItemProps) {
       {/* Folders List */}
       {openStates[`ts-${teamSpace.id}`] && (
         <div className="ml-4 space-y-1">
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={handleCreateFolder}
-            className="w-full justify-start text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-hover"
-          >
-            <FolderPlus className="h-3.5 w-3.5 mr-1.5" />
-            New Folder
-          </Button>
+          {isCreatingFolder ? (
+            <form onSubmit={handleSubmitFolder} className="flex items-center gap-2 pr-2">
+              <Input
+                value={newFolderName}
+                onChange={(e) => setNewFolderName(e.target.value)}
+                onKeyDown={handleKeyDown}
+                onBlur={() => {
+                  setIsCreatingFolder(false)
+                  setNewFolderName("")
+                }}
+                placeholder="Folder name"
+                className="h-7 text-sm"
+                autoFocus
+                disabled={isLoading}
+              />
+            </form>
+          ) : (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={handleCreateFolder}
+              className="w-full justify-start text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-hover"
+            >
+              <FolderPlus className="h-3.5 w-3.5 mr-1.5" />
+              New Folder
+            </Button>
+          )}
 
           {/* Folders */}
           {teamSpace.folders?.map((folder) => (
