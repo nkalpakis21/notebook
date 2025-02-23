@@ -1,10 +1,9 @@
 'use client'
 
-import { ChevronDown, ChevronRight, Users, FolderPlus, Plus } from "lucide-react"
+import { ChevronDown, ChevronRight, Users, FolderPlus, Plus, FileText } from "lucide-react"
 import type { ITeamspace } from "@/types/types"
 import { Button } from "@/components/ui/button"
 import { useSidebar } from "@/contexts/SidebarContext"
-import { useTeamSpaceActions } from "@/hooks/useTeamSpaceActions"
 import { useState } from "react"
 import { Input } from "@/components/ui/input"
 
@@ -13,48 +12,9 @@ interface TeamSpaceItemProps {
 }
 
 export function TeamSpaceItem({ teamSpace }: TeamSpaceItemProps) {
-  const { openStates, toggleOpen } = useSidebar()
-  const { createFolder } = useTeamSpaceActions()
-  const [isCreatingFolder, setIsCreatingFolder] = useState(false)
-  const [newFolderName, setNewFolderName] = useState("")
+  const { openStates, toggleOpen,  } = useSidebar()
+  const [folderName, setFolderName] = useState("")
   const [isLoading, setIsLoading] = useState(false)
-
-  const handleCreateFolder = () => {
-    setIsCreatingFolder(true)
-  }
-
-  const handleSubmitFolder = async (e: React.FormEvent) => {
-    e.preventDefault()
-    if (!newFolderName.trim() || isLoading) return
-
-    try {
-      setIsLoading(true)
-      await createFolder(teamSpace.id, newFolderName.trim())
-      setNewFolderName("")
-      setIsCreatingFolder(false)
-    } catch (error) {
-      console.error('Error creating folder:', error)
-    } finally {
-      setIsLoading(false)
-    }
-  }
-
-  const handleKeyDown = (e: React.KeyboardEvent) => {
-    if (e.key === 'Escape') {
-      setIsCreatingFolder(false)
-      setNewFolderName("")
-    }
-  }
-
-  const handleCreateNote = (folderId: string) => {
-    // setDialogState({
-    //   type: 'note',
-    //   isOpen: true,
-    //   teamSpaceId: teamSpace.id,
-    //   folderId,
-    //   isLoading: false
-    // })
-  }
 
   return (
     <div className="space-y-1">
@@ -75,33 +35,24 @@ export function TeamSpaceItem({ teamSpace }: TeamSpaceItemProps) {
       {/* Folders List */}
       {openStates[`ts-${teamSpace.id}`] && (
         <div className="ml-4 space-y-1">
-          {isCreatingFolder ? (
-            <form onSubmit={handleSubmitFolder} className="flex items-center gap-2 pr-2">
-              <Input
-                value={newFolderName}
-                onChange={(e) => setNewFolderName(e.target.value)}
-                onKeyDown={handleKeyDown}
-                onBlur={() => {
-                  setIsCreatingFolder(false)
-                  setNewFolderName("")
-                }}
-                placeholder="Folder name"
-                className="h-7 text-sm"
-                autoFocus
-                disabled={isLoading}
-              />
-            </form>
-          ) : (
+          <div className="flex items-center">
+            <Input
+              value={folderName}
+              onChange={(e) => setFolderName(e.target.value)}
+              placeholder="New Folder Name"
+              className="flex-1 p-1 border rounded"
+              disabled={isLoading}
+            />
             <Button
               variant="ghost"
               size="sm"
-              onClick={handleCreateFolder}
-              className="w-full justify-start text-notion-text-secondary hover:text-notion-text-primary hover:bg-notion-hover"
+              onClick={() => {}}
+              className="ml-2"
+              disabled={isLoading}
             >
-              <FolderPlus className="h-3.5 w-3.5 mr-1.5" />
-              New Folder
+              <FolderPlus className="h-3.5 w-3.5" />
             </Button>
-          )}
+          </div>
 
           {/* Folders */}
           {teamSpace.folders?.map((folder) => (
@@ -121,7 +72,6 @@ export function TeamSpaceItem({ teamSpace }: TeamSpaceItemProps) {
                   size="icon"
                   onClick={(e) => {
                     e.stopPropagation()
-                    handleCreateNote(folder.id)
                   }}
                   className="h-6 w-6 opacity-0 group-hover:opacity-100"
                 >
@@ -148,4 +98,4 @@ export function TeamSpaceItem({ teamSpace }: TeamSpaceItemProps) {
       )}
     </div>
   )
-} 
+}

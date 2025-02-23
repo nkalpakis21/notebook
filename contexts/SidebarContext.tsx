@@ -21,34 +21,7 @@ export function SidebarProvider({ children }: { children: React.ReactNode }) {
   const [openStates, setOpenStates] = useState<{ [key: string]: boolean }>({})
 
   const fetchTeamSpaces = useCallback(async () => {
-    try {
-      const teamSpacesRef = collection(db, 'teamspaces')
-      const snapshot = await getDocs(teamSpacesRef)
-      const teamSpacesData = snapshot.docs.map(doc => ({
-        ...doc.data(),
-        id: doc.id,
-      })) as ITeamspace[]
-      
-      setTeamSpaces(teamSpacesData)
-      
-      // Initialize open states for new items
-      setOpenStates(prev => {
-        const newStates = { ...prev }
-        teamSpacesData.forEach(ts => {
-          if (!newStates[`ts-${ts.id}`]) {
-            newStates[`ts-${ts.id}`] = true
-          }
-          ts.folders?.forEach(folder => {
-            if (!newStates[`folder-${folder.id}`]) {
-              newStates[`folder-${folder.id}`] = false
-            }
-          })
-        })
-        return newStates
-      })
-    } catch (error) {
-      console.error("Error fetching team spaces:", error)
-    }
+
   }, [])
 
   const toggleOpen = useCallback((key: string) => {
